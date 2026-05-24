@@ -28,7 +28,6 @@ import http from 'http';
 // ==========================================
 // 🌐 SERVIDOR HTTP PARA UPTIME (24/7)
 // ==========================================
-// 🔥 FIX DE TYPESCRIPT: Le agregamos :any a req y res
 http.createServer((req: any, res: any) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('El bot esta online!');
@@ -48,7 +47,6 @@ try {
         }
     }
 } catch (e) {}
-
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
 
@@ -83,7 +81,7 @@ async function getSpotifyTracks(url: string) {
     });
     
     if (!tokenRes.ok) throw new Error('Error de conexión con Spotify Auth');
-    const tokenData = await tokenRes.json();
+    const tokenData: any = await tokenRes.json();
     const accessToken = tokenData.access_token;
 
     const match = url.match(/spotify\.com\/(playlist|track|album)\/([a-zA-Z0-9]+)/);
@@ -93,16 +91,16 @@ async function getSpotifyTracks(url: string) {
     const id = match[2];
 
     if (type === 'track') {
-      const res = await fetch(`https://api.spotify.com/v1/tracks/$${id}`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
-        const track = await res.json();
+        const res = await fetch(`https://api.spotify.com/v1/tracks/$$$${id}`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+        const track: any = await res.json();
         return [`${track.name} ${track.artists[0].name}`];
     } else if (type === 'playlist') {
-        const res = await fetch(`https://api.spotify.com/v1/playlists/$${id}/tracks?limit=50`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
-        const data = await res.json();
+        const res = await fetch(`https://api.spotify.com/v1/playlists/$$$${id}/tracks?limit=50`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+        const data: any = await res.json();
         return data.items.filter((item: any) => item.track).map((item: any) => `${item.track.name} ${item.track.artists[0].name}`);
     } else if (type === 'album') {
-        const res = await fetch(`https://api.spotify.com/v1/albums/$${id}/tracks?limit=50`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
-        const data = await res.json();
+        const res = await fetch(`https://api.spotify.com/v1/albums/$$$${id}/tracks?limit=50`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+        const data: any = await res.json();
         return data.items.map((item: any) => `${item.name} ${item.artists[0].name}`);
     }
     return [url];
@@ -156,7 +154,7 @@ async function playSong(guildId: string, songQuery: string) {
         if (serverQueue.currentFilter === 'speedup') {
             filterString = 'asetrate=48000*1.25,aresample=48000';
         } else if (serverQueue.currentFilter === 'slowed') {
-            filterString = 'asetrate=48000*0.88,aresample=48000,aecho=0.8:0.7:60:0.5';
+            filterString = 'asetrate=48000*0.92,aresample=48000,aecho=0.8:0.7:60:0.5';
         }
 
         const ffmpegArgs: string[] = [
@@ -177,7 +175,6 @@ async function playSong(guildId: string, songQuery: string) {
         });
 
         subprocess.stdout.pipe(ffmpegProcess.stdin);
-
         serverQueue.audioProcess = ffmpegProcess;
 
         const resource = createAudioResource(ffmpegProcess.stdout, {
@@ -188,9 +185,7 @@ async function playSong(guildId: string, songQuery: string) {
         serverQueue.player.play(resource);
         serverQueue.startTime = Date.now();
 
-        // ==========================================
-        // 🎛️ BOTONES Y SUGERENCIAS
-        // ==========================================
+        // Armamos botonera básica
         const row1 = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder().setCustomId('btn_pause').setLabel('⏸️ / ▶️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('btn_skip').setLabel('⏭️ Saltar').setStyle(ButtonStyle.Primary),
@@ -200,24 +195,59 @@ async function playSong(guildId: string, songQuery: string) {
         const row2 = new ActionRowBuilder<ButtonBuilder>().addComponents(
             new ButtonBuilder().setCustomId('btn_normal').setLabel('🎵 Normal').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('btn_speedup').setLabel('⚡ Speed Up').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_slowed').setLabel('🌫️ Slowed').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('btn_slowed').setLabel('🌫️ Slowed & Reverb').setStyle(ButtonStyle.Secondary)
         );
 
         const rows: any[] = [row1, row2];
-        
+      // 🔥 SISTEMA DE SUGERENCIAS ULTRA INTELIGENTE (ANTI-ÁLBUMES Y COMPILADOS)
         try {
-            const videoInfo = await play.video_info(cleanUrl);
-            const relacionados = videoInfo.related_videos;
+            let palabraClaveFiltro = displayTitle.toLowerCase();
+            let consultaBusqueda = `${displayTitle}`;
 
-            if (relacionados && relacionados.length > 0) {
+            if (displayTitle.includes('-')) {
+                const partes = displayTitle.split('-');
+                const artista = partes[0].trim();
+                const cancion = partes[1].split(/[\(\[:\/]/)[0].trim().toLowerCase();
+                if (cancion) {
+                    palabraClaveFiltro = cancion;
+                    consultaBusqueda = `${artista} songs`; // Buscamos canciones sueltas del artista
+                }
+            } else if (displayTitle.includes(':')) {
+                const partes = displayTitle.split(':');
+                const artista = partes[0].trim();
+                const cancion = partes[1].split(/[\(\[:\/]/)[0].trim().toLowerCase();
+                if (cancion) {
+                    palabraClaveFiltro = cancion;
+                    consultaBusqueda = `${artista} songs`;
+                }
+            }
+
+            // Pedimos 25 resultados para tener un buen colchón para filtrar
+            const resultadosMix = await play.search(consultaBusqueda, { limit: 25, source: { youtube: 'video' } });
+            
+            // 🚫 FILTRADO ESTRICTO: Chau clones, chau álbumes completos y chau videos eternos
+            const filtrados = resultadosMix.filter((vid: any) => {
+                const tituloVideo = vid.title ? vid.title.toLowerCase() : '';
+                
+                // Baneo de palabras clave que delatan un enganchado, mix largo o disco entero
+                const palabrasProhibidas = ['album', 'compilation', 'compilado', 'full', 'completo', 'hits', 'collection', 'coleccion', 'mix', 'best of', 'grandes exitos', 'remix'];
+                const tienePalabraProhibida = palabrasProhibidas.some(p => tituloVideo.includes(p));
+                
+                // Filtro por tiempo estricto: si el video dura más de 11 minutos (660 segundos), se descarta
+                const esLargo = vid.durationInSec ? vid.durationInSec > 660 : false;
+
+                return vid.url !== cleanUrl && !tituloVideo.includes(palabraClaveFiltro) && !tienePalabraProhibida && !esLargo;
+            }).slice(0, 10);
+
+            if (filtrados && filtrados.length > 0) {
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('select_sugerencia')
                     .setPlaceholder('💡 Elegí un tema similar para la cola...')
                     .addOptions(
-                        relacionados.slice(0, 10).map((vid: any) => ({
+                        filtrados.map((vid: any) => ({
                             label: vid.title ? vid.title.substring(0, 95) : 'Tema sugerido',
                             value: vid.url || 'error',
-                            description: 'Sugerencia de YouTube'
+                            description: `Tema sugerido por PeluMusic`
                         })).filter((opt: any) => opt.value !== 'error')
                     );
                 
@@ -225,9 +255,8 @@ async function playSong(guildId: string, songQuery: string) {
                 rows.push(row3);
             }
         } catch (error) {
-            console.error('No pude cargar las sugerencias para este tema.');
+            console.error('No pude cargar las sugerencias filtradas:', error);
         }
-
         const filterIcon = serverQueue.currentFilter === 'speedup' ? '⚡'
             : serverQueue.currentFilter === 'slowed' ? '🌫️'
             : '🎵';
@@ -239,7 +268,7 @@ async function playSong(guildId: string, songQuery: string) {
 
     } catch (error: any) {
         console.error('💥 Error reproduciendo:', error);
-        serverQueue.textChannel.send('💥 Saltó un error loco de YouTube... pasando al siguiente tema.');
+        serverQueue.textChannel.send('💥 Error de reproducción... pasando al siguiente tema.');
         serverQueue.songs.shift(); 
         if (serverQueue.songs.length > 0) {
             playSong(guildId, serverQueue.songs[0]); 
@@ -250,8 +279,9 @@ async function playSong(guildId: string, songQuery: string) {
     }
 }
 
-client.once('ready', async () => {
-    console.log(`🔥 PELUMUSIC ONLINE Y LISTO PARA EL CAOS como ${client.user?.tag}`);
+// Cambiado a clientReady para fixear el warning molesto
+client.once('clientReady', async () => {
+    console.log(`🔥 PELUMUSIC ONLINE Y READY PARA EL CAOS como ${client.user?.tag}`);
     try { 
         await play.setToken({ soundcloud: { client_id: await play.getFreeClientID() } }); 
     } catch (e) {}
@@ -259,9 +289,6 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async (interaction: Interaction) => {
     
-    // ==========================================
-    // 🖱️ MANEJADOR DE CLICKS EN BOTONES
-    // ==========================================
     if (interaction.isButton()) {
         const guildId = interaction.guildId;
         if (!guildId) return;
@@ -275,7 +302,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         if (interaction.customId === 'btn_pause') {
             if (serverQueue.player.state.status === AudioPlayerStatus.Playing) {
                 serverQueue.player.pause();
-                return interaction.reply({ content: '⏸️ Pausado. Tocá el botón de nuevo para seguir.', flags: MessageFlags.Ephemeral });
+                return interaction.reply({ content: '⏸️ Pausado.', flags: MessageFlags.Ephemeral });
             } else if (serverQueue.player.state.status === AudioPlayerStatus.Paused) {
                 serverQueue.player.unpause();
                 return interaction.reply({ content: '▶️ Seguimos de joda.', flags: MessageFlags.Ephemeral });
@@ -285,7 +312,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 
         if (interaction.customId === 'btn_skip') {
             if (serverQueue.songs.length <= 1) {
-                return interaction.reply({ content: '¡No hay ningun tema en la cola, pelotudo! Dale a apagar si querés cortarla.', flags: MessageFlags.Ephemeral });
+                return interaction.reply({ content: '¡No hay mas temas en la cola!', flags: MessageFlags.Ephemeral });
             }
             if (serverQueue.audioProcess) {
                 try { 
@@ -296,15 +323,10 @@ client.on('interactionCreate', async (interaction: Interaction) => {
             }
             serverQueue.currentFilter = undefined; 
             serverQueue.player.stop();
-            return interaction.reply({ content: '⏭️ Skipiado.' });
+            return interaction.reply({ content: '>>>> Skipiado.' });
         }
 
         if (interaction.customId === 'btn_stop') {
-            const tiempoTocando = Date.now() - (serverQueue.startTime || Date.now());
-            const mensajeDespedida = tiempoTocando < 15000 
-                ? 'Bueno amigo, la verdad que sos un wachin, no pasaron ni 15 segundos y ya me querés apagar, batate' 
-                : '🛑 HASTA LUEGO NEGRO';
-
             serverQueue.songs = []; 
             if (serverQueue.audioProcess) {
                 try { 
@@ -316,7 +338,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
             serverQueue.player.stop();
             try { serverQueue.connection.destroy(); } catch (e) {}
             queueMap.delete(guildId); 
-            return interaction.reply({ content: mensajeDespedida });
+            return interaction.reply({ content: '🛑 HASTA LUEGO NEGRO' });
         }
 
         if (['btn_normal', 'btn_speedup', 'btn_slowed'].includes(interaction.customId)) {
@@ -347,13 +369,10 @@ client.on('interactionCreate', async (interaction: Interaction) => {
             serverQueue.player.stop(true);
             
             const effectName = interaction.customId.split('_')[1].toUpperCase();
-            return interaction.editReply({ content: `🎛️ ¡Filtro **${effectName}** aplicado! Reiniciando el motor...` });
+            return interaction.editReply({ content: `🎛️ Filtro **${effectName}** aplicado. Re-esculpiendo audio...` });
         }
     }
 
-    // ==========================================
-    // 📋 MANEJADOR DEL MENÚ DE SUGERENCIAS
-    // ==========================================
     if (interaction.isStringSelectMenu()) {
         const guildId = interaction.guildId;
         if (!guildId) return;
@@ -363,20 +382,16 @@ client.on('interactionCreate', async (interaction: Interaction) => {
             const serverQueue = queueMap.get(guildId);
             
             if (!serverQueue) {
-                return interaction.reply({ content: 'No hay nada reproduciéndose como para agregar a la cola.', flags: MessageFlags.Ephemeral });
+                return interaction.reply({ content: 'No hay cola activa ahora.', flags: MessageFlags.Ephemeral });
             }
 
             serverQueue.songs.push(urlElegida);
-            
             return interaction.reply({ 
-                content: `✅ ¡Qué buen gusto! Se agregó tu sugerencia a la cola. (Posición #${serverQueue.songs.length - 1})` 
+                content: `✅ ¡Agregado por sugerencia! (Posición #${serverQueue.songs.length - 1})` 
             });
         }
     }
 
-    // ==========================================
-    // ⌨️ MANEJADOR DE COMANDOS SLASH
-    // ==========================================
     if (!interaction.isChatInputCommand()) return;
     const { commandName, guildId } = interaction;
     if (!guildId) return;
@@ -388,8 +403,8 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         const urlValue = interaction.options.get('link')?.value;
         const query = typeof urlValue === 'string' ? urlValue.trim() : '';
 
-        if (!voiceChannel) return interaction.reply({ content: 'Metete a un canal, pelotudo.', flags: MessageFlags.Ephemeral });
-        if (!query) return interaction.reply({ content: 'Escribime algo, no soy adivino.', flags: MessageFlags.Ephemeral });
+        if (!voiceChannel) return interaction.reply({ content: 'Metete a un canal, fiera.', flags: MessageFlags.Ephemeral });
+        if (!query) return interaction.reply({ content: 'Pasame un tema válido.', flags: MessageFlags.Ephemeral });
         
         await interaction.deferReply();
 
@@ -397,11 +412,10 @@ client.on('interactionCreate', async (interaction: Interaction) => {
 
         if (query.includes('spotify.com')) { 
             try {
-                await interaction.editReply({ content: `🔄 Hackeando la base de datos de Spotify... bancame un toque.` });
+                await interaction.editReply({ content: `🔄 Cargando links de Spotify...` });
                 songsToAdd = await getSpotifyTracks(query);
             } catch (error) {
-                console.error(error);
-                return interaction.editReply({ content: '💥 Explotó Spotify. Revisá la consola.' });
+                return interaction.editReply({ content: '💥 Error con la API de Spotify.' });
             }
         } else {
             songsToAdd = [query];
@@ -410,19 +424,10 @@ client.on('interactionCreate', async (interaction: Interaction) => {
         let textMsg = '';
         if (!serverQueue) {
             textMsg = songsToAdd.length > 1 
-                ? `✅ ¡Cargada playlist de **${songsToAdd.length}** temas! Arrancando el primero...` 
-                : `✅ Agregado a la cola y buscando...`;
+                ? `✅ Playlist cargada (${songsToAdd.length} temas).` 
+                : `✅ Buscando tema...`;
         } else {
-            const estabaVacia = serverQueue.songs.length === 0;
-            if (estabaVacia) {
-                textMsg = songsToAdd.length > 1 
-                    ? `✅ ¡Volvimos! Cargada playlist de **${songsToAdd.length}** temas. Arrancando...` 
-                    : `✅ ¡Me despertaron! Arrancando: **${songsToAdd[0]}**`;
-            } else {
-                textMsg = songsToAdd.length > 1 
-                    ? `📝 ¡Se agregaron **${songsToAdd.length}** temas de la playlist a la cola!` 
-                    : `📝 Agregado a la cola. (Posición #${serverQueue.songs.length})`;
-            }
+            textMsg = `📝 Agregado a la cola (Posición #${serverQueue.songs.length})`;
         }
 
         if (!serverQueue) {
@@ -457,7 +462,7 @@ client.on('interactionCreate', async (interaction: Interaction) => {
                     queueConstruct.leaveTimeout = setTimeout(() => {
                         try { queueConstruct.connection.destroy(); } catch (e) {}
                         queueMap.delete(guildId);
-                        queueConstruct.textChannel.send('💤 Me fui a dormir porque pasaron 15 minutos sin música. ¡Chau Forros!');
+                        queueConstruct.textChannel.send('💤 Sala vacía. Me fui a dormir.');
                     }, 15 * 60 * 1000); 
                 }
             });
@@ -465,76 +470,52 @@ client.on('interactionCreate', async (interaction: Interaction) => {
             await interaction.editReply({ content: textMsg });
             playSong(guildId, queueConstruct.songs[0]);
         } else {
-            const estabaVacia = serverQueue.songs.length === 0;
-
             if (serverQueue.leaveTimeout) {
                 clearTimeout(serverQueue.leaveTimeout);
                 serverQueue.leaveTimeout = null;
             }
 
             serverQueue.songs.push(...songsToAdd);
-
-            if (estabaVacia) {
-                await interaction.editReply({ content: textMsg });
+            await interaction.editReply({ content: textMsg });
+            
+            if (serverQueue.songs.length === songsToAdd.length) {
                 playSong(guildId, serverQueue.songs[0]);
-            } else {
-                return interaction.editReply({ content: textMsg });
             }
         }
     }
 
     if (commandName === 'peluskip') {
-        if (!voiceChannel) return interaction.reply({ content: 'Metete a un canal primero.', flags: MessageFlags.Ephemeral });
-        if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply({ content: 'No está sonando nada.', flags: MessageFlags.Ephemeral });
+        if (!voiceChannel) return interaction.reply({ content: 'Metete a un canal.', flags: MessageFlags.Ephemeral });
+        if (!serverQueue || serverQueue.songs.length === 0) return interaction.reply({ content: 'No hay música.', flags: MessageFlags.Ephemeral });
         
-        if (serverQueue.songs.length <= 1) {
-            return interaction.reply({ content: '¡No hay nada en la cola MOGOLICO', flags: MessageFlags.Ephemeral });
-        }
+        if (serverQueue.songs.length <= 1) return interaction.reply({ content: 'La cola está vacía.', flags: MessageFlags.Ephemeral });
 
-        if (serverQueue.audioProcess) try { 
-            serverQueue.audioProcess.stdin?.destroy();
-            serverQueue.audioProcess.stdout?.destroy();
-            serverQueue.audioProcess.kill('SIGKILL'); 
-        } catch (e) {}
-        
+        if (serverQueue.audioProcess) try { serverQueue.audioProcess.kill('SIGKILL'); } catch (e) {}
         serverQueue.currentFilter = undefined;
         serverQueue.player.stop();
         return interaction.reply({ content: '⏭️ Skipiado.' });
     }
     
     if (commandName === 'pelustop') {
-        if (!voiceChannel) return interaction.reply({ content: 'Metete a un canal primero.', flags: MessageFlags.Ephemeral });
-        if (!serverQueue) return interaction.reply({ content: 'Ya estoy callado.', flags: MessageFlags.Ephemeral });
-        
-        const tiempoTocando = Date.now() - (serverQueue.startTime || Date.now());
-        const mensajeDespedida = tiempoTocando < 15000 
-            ? 'NOS VEMOS WACHIN'  
-            : '🛑 Chau.';
+        if (!voiceChannel) return interaction.reply({ content: 'Metete a un canal.', flags: MessageFlags.Ephemeral });
+        if (!serverQueue) return interaction.reply({ content: 'Ya estoy apagado.', flags: MessageFlags.Ephemeral });
 
         serverQueue.songs = []; 
-        if (serverQueue.audioProcess) try { 
-            serverQueue.audioProcess.stdin?.destroy();
-            serverQueue.audioProcess.stdout?.destroy();
-            serverQueue.audioProcess.kill('SIGKILL'); 
-        } catch (e) {}
+        if (serverQueue.audioProcess) try { serverQueue.audioProcess.kill('SIGKILL'); } catch (e) {}
         serverQueue.player.stop();
         try { serverQueue.connection.destroy(); } catch (e) {}
         queueMap.delete(guildId); 
-        return interaction.reply({ content: mensajeDespedida });
+        return interaction.reply({ content: '🛑 Desconectado.' });
     }
 });
 
 client.login(token);
 
-// ==========================================
-// 🛡️ ESCUDO ANTI-CRASHEOS
-// ==========================================
-// 🔥 FIX DE TYPESCRIPT: Le agregamos :any a reason y promise
 process.on('uncaughtException', (error: any) => {
     if (error.code === 'EPIPE' || error.message.includes('EPIPE')) return;
     console.error('💥 Error global interceptado:', error);
 });
 
-process.on('unhandledRejection', (reason: any, promise: any) => {
-    console.error('💥 Promesa rota interceptada (no crashea):', reason);
+process.on('unhandledRejection', (reason: any) => {
+    console.error('💥 Promesa rota interceptada:', reason);
 });
